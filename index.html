@@ -22,7 +22,6 @@ html,body{
     height:100%;
 }
 
-/* TOOLBAR */
 .toolbar{
     position:absolute;
     top:10px;
@@ -31,7 +30,6 @@ html,body{
     width:260px;
 }
 
-/* DROPDOWN */
 .dropdown{
     background:white;
     margin-bottom:10px;
@@ -48,13 +46,11 @@ html,body{
     background:#f0f0f0;
 }
 
-/* CONTENT */
 .dropdown-content{
     display:none;
     padding:10px;
 }
 
-/* 🔥 POGAS */
 .dropdown-content button,
 .dropdown-content input{
     width:100%;
@@ -65,43 +61,29 @@ html,body{
     border:1px solid #ccc;
 }
 
-/* INPUT */
-.dropdown-content input{
-    font-size:15px;
-}
-
-/* COORDS */
 #coords{
     font-size:14px;
     margin-top:8px;
 }
 
-/* 🔥 MOBILE MODE */
 @media (max-width: 600px){
-
 .toolbar{
     width:90%;
     left:5%;
     right:5%;
-    top:10px;
 }
-
 .dropdown-header{
     font-size:18px;
     padding:16px;
 }
-
 .dropdown-content button,
 .dropdown-content input{
     font-size:18px;
     padding:16px;
 }
-
-/* vēl lielāks klikšķa laukums */
 .dropdown-content button{
     min-height:50px;
 }
-
 }
 </style>
 </head>
@@ -120,281 +102,110 @@ html,body{
 </div>
 </div>
 
-<div class="dropdown">
-<div class="dropdown-header" onclick="toggle(this)">Teritorija</div>
-<div class="dropdown-content">
-<button onclick="drawGameField()">Iezīmēt teritoriju</button>
-</div>
-</div>
-
-<div class="dropdown">
-<div class="dropdown-header" onclick="toggle(this)">Foto</div>
-<div class="dropdown-content">
-<button onclick="addPhotoPoint()">Foto punkts</button>
-</div>
-</div>
-
-<div class="dropdown">
-<div class="dropdown-header" onclick="toggle(this)">GeoJSON</div>
-<div class="dropdown-content">
-<button onclick="exportGeoJSON()">Saglabāt</button>
-<input type="file" id="importFile" accept=".geojson">
-<button onclick="importGeoJSON()">Ielādēt</button>
-</div>
-</div>
-
-<div class="dropdown">
-<div class="dropdown-header" onclick="toggle(this)">Karte</div>
-<div class="dropdown-content">
-<button onclick="enableMapExport()">Saglabāt attēlu</button>
-<input id="latlngInput" placeholder="Lat,Lng">
-<button onclick="goToLatLng()">Rādīt punktu</button>
-<div id="coords"></div>
-</div>
-</div>
-
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script>
-
-/* DROPDOWN */
 function toggle(el){
 const content = el.nextElementSibling;
 content.style.display = content.style.display === "block" ? "none" : "block";
 }
 
-/* MAP */
 const map = L.map('map').setView([56.504,21.01],13);
 
-const lvmTopo = L.tileLayer.wms(
+L.tileLayer.wms(
 "https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
 format:"image/png",
 maxZoom:19
 }).addTo(map);
 
-const lvmOrto = L.tileLayer.wms(
-"https://lvmgeoserver.lvm.lv/geoserver/ows?",{
-layers:"public:Orto_LKS",
-format:"image/jpeg",
-maxZoom:19
-});
-
-L.control.layers({
-"LVM Topo":lvmTopo,
-"LVM Orto":lvmOrto
-}).addTo(map);
-
-/* DRAW */
 let roadType="good";
 const drawnItems=new L.FeatureGroup();
 map.addLayer(drawnItems);
 
-/* SAVE */
-function saveData(){
-localStorage.setItem("forest_data",
-JSON.stringify(drawnItems.toGeoJSON()));
-}
-
-/* LOAD */
-function loadData(){
-const saved=localStorage.getItem("forest_data");
-if(!saved) return;
-
-L.geoJSON(JSON.parse(saved),{
-
-style:f=>{
-if(f.properties?.type==="game_field")
-return {color:"blue",weight:3,fill:false};
-
-if(f.properties?.roadType==="good")
-return {color:"green",weight:5};
-
-if(f.properties?.roadType==="bad")
-return {color:"orange",weight:5};
-
-if(f.properties?.roadType==="blocked")
-return {color:"red",weight:5};
-},
-
-pointToLayer:(f,latlng)=>{
-if(f.properties?.type==="road_end")
-return L.circleMarker(latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
-
-if(f.properties?.type==="photo"){
-const m=L.marker(latlng);
-m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
-return m;
-}
-
-return L.marker(latlng);
-}
-
-}).eachLayer(l=>drawnItems.addLayer(l));
-}
-loadData();
-
-/* DRAW CONTROL */
 const drawControl=new L.Control.Draw({
 edit:{featureGroup:drawnItems},
 draw:{polygon:false,rectangle:false,circle:false,marker:false,circlemarker:false}
 });
 map.addControl(drawControl);
 
-/* ✅ FIXED coords */
-const coordsEl = document.getElementById("coords");
-
-map.on('mousemove', e=>{
-coordsEl.innerHTML = e.latlng.lat.toFixed(6)+", "+e.latlng.lng.toFixed(6);
-});
-
-/* CREATED */
 map.on(L.Draw.Event.CREATED,e=>{
 const l=e.layer;
 
-if(l instanceof L.Polyline && !(l instanceof L.Polygon)){
 let c="green";
 if(roadType==="bad") c="orange";
 if(roadType==="blocked") c="red";
+
 l.setStyle({color:c,weight:5});
 l.feature={type:"Feature",properties:{roadType}};
-}
-
-if(l instanceof L.Polygon){
-l.setStyle({color:"blue",weight:3,fill:false});
-l.feature={type:"Feature",properties:{type:"game_field"}};
-}
 
 drawnItems.addLayer(l);
-saveData();
+saveToFirebase(l);
 });
 
-/* FIELD */
-function drawGameField(){
-new L.Draw.Polygon(map).enable();
-}
-
-/* ROAD END */
 function addRoadEnd(){
 map.once("click",e=>{
 const m=L.circleMarker(e.latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
 m.feature={type:"Feature",properties:{type:"road_end"}};
 drawnItems.addLayer(m);
-saveData();
+saveToFirebase(m);
 });
 }
+</script>
 
-/* PHOTO */
-function addPhotoPoint(){
-map.once("click",e=>{
-const i=document.createElement("input");
-i.type="file";
-i.accept="image/*";
+<!-- FIREBASE -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-i.onchange=()=>{
-const f=i.files[0];
-const r=new FileReader();
-
-r.onload=ev=>{
-const m=L.marker(e.latlng);
-m.bindPopup(`<img src="${ev.target.result}" width="250">`);
-m.feature={type:"Feature",properties:{type:"photo",imageData:ev.target.result}};
-drawnItems.addLayer(m);
-saveData();
-};
-r.readAsDataURL(f);
-};
-i.click();
-});
-}
-
-/* EXPORT */
-function exportGeoJSON(){
-const a=document.createElement("a");
-a.href="data:text/json;charset=utf-8,"+
-encodeURIComponent(JSON.stringify(drawnItems.toGeoJSON(),null,2));
-a.download="forest_data.geojson";
-a.click();
-}
-
-/* IMPORT */
-function importGeoJSON(){
-const fileInput=document.getElementById("importFile");
-if(!fileInput.files.length) return alert("Izvēlies failu");
-
-const reader=new FileReader();
-
-reader.onload=e=>{
-const data=JSON.parse(e.target.result);
-
-const layer=L.geoJSON(data,{
-style:f=>{
-if(f.properties?.roadType==="good") return {color:"green"};
-if(f.properties?.roadType==="bad") return {color:"orange"};
-if(f.properties?.roadType==="blocked") return {color:"red"};
-},
-pointToLayer:(f,latlng)=>{
-if(f.properties?.type==="photo"){
-const m=L.marker(latlng);
-m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
-return m;
-}
-return L.marker(latlng);
-}
-});
-
-layer.eachLayer(l=>drawnItems.addLayer(l));
-saveData();
+const firebaseConfig = {
+  apiKey: "TEV_API_KEY",
+  authDomain: "forest-map-2971b.firebaseapp.com",
+  projectId: "forest-map-2971b",
+  storageBucket: "forest-map-2971b.appspot.com",
+  messagingSenderId: "XXXX",
+  appId: "XXXX"
 };
 
-reader.readAsText(fileInput.files[0]);
-}
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const roadsRef = collection(db, "roads");
 
-/* MAP IMAGE */
-function enableMapExport(){
-new L.Draw.Rectangle(map).enable();
+onSnapshot(roadsRef, (snapshot) => {
+  drawnItems.clearLayers();
 
-map.once(L.Draw.Event.CREATED,()=>{
-html2canvas(map.getContainer()).then(c=>{
-const a=document.createElement("a");
-a.download="map.png";
-a.href=c.toDataURL();
-a.click();
+  snapshot.forEach(doc => {
+    const data = doc.data();
+
+    const layer = L.geoJSON(data.geojson, {
+      style: f => {
+        if(f.properties?.roadType==="good") return {color:"green",weight:5};
+        if(f.properties?.roadType==="bad") return {color:"orange",weight:5};
+        if(f.properties?.roadType==="blocked") return {color:"red",weight:5};
+      },
+      pointToLayer:(f,latlng)=>{
+        if(f.properties?.type==="road_end")
+          return L.circleMarker(latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
+        return L.marker(latlng);
+      }
+    });
+
+    layer.eachLayer(l=>drawnItems.addLayer(l));
+  });
 });
-});
+
+window.saveToFirebase = async function(layer){
+  const geo = layer.toGeoJSON();
+
+  await addDoc(roadsRef, {
+    geojson: geo
+  });
 }
-
-/* ✅ FIXED latlng */
-function goToLatLng(){
-let input = document.getElementById("latlngInput").value.trim();
-if(!input) return alert("Ievadi koordinātes");
-
-input=input.replace(",", " ");
-const parts=input.split(/\s+/);
-
-const lat=parseFloat(parts[0]);
-const lng=parseFloat(parts[1]);
-
-if(isNaN(lat)||isNaN(lng)) return alert("Nepareizs formāts");
-
-const marker=L.marker([lat,lng]).addTo(map)
-.bindPopup(input).openPopup();
-
-drawnItems.addLayer(marker);
-map.setView([lat,lng],16);
-saveData();
-}
-
-/* AUTO SAVE */
-map.on(L.Draw.Event.EDITED, saveData);
-map.on(L.Draw.Event.DELETED, saveData);
-
 </script>
 
 </body>
