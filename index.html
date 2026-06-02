@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map FINAL</title>
+<title>Forest Map FIXED</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -11,6 +11,7 @@
 html,body{margin:0;height:100%}
 #map{height:100%}
 
+/* toolbar */
 .toolbar{
 position:absolute;
 top:10px;
@@ -19,7 +20,7 @@ z-index:1000;
 background:white;
 padding:10px;
 border-radius:10px;
-width:260px;
+width:250px;
 }
 
 button{
@@ -35,9 +36,9 @@ font-size:16px;
 
 <div class="toolbar" id="toolbar">
 
-<button onclick="startDraw('good')">🟢 Braucams</button>
-<button onclick="startDraw('bad')">🟠 Slikts</button>
-<button onclick="startDraw('blocked')">🔴 Bloķēts</button>
+<button onclick="setMode('good')">🟢 Braucams</button>
+<button onclick="setMode('bad')">🟠 Slikts</button>
+<button onclick="setMode('blocked')">🔴 Bloķēts</button>
 
 <button onclick="finishDraw()">✔ Pabeigt</button>
 <button onclick="cancelDraw()">❌ Atcelt</button>
@@ -52,7 +53,8 @@ font-size:16px;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
-const map=L.map('map').setView([56.5,21],13);
+// ================= MAP =================
+const map=L.map('map',{tap:true}).setView([56.5,21],13);
 
 // 🌲 LAYERS (FIXED)
 const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
@@ -61,7 +63,7 @@ format:"image/png"
 });
 
 const ortho=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
-layers:"public:Ortofoto", // ja nestrādā → maini uz public:Orto
+layers:"public:Orto",
 format:"image/png"
 });
 
@@ -69,34 +71,37 @@ topo.addTo(map);
 
 L.control.layers({
 "Topo":topo,
-"Ortofoto":ortho
+"Orto (īstais skats)":ortho
 }).addTo(map);
 
-// STORAGE
-const drawnItems=new L.FeatureGroup();
-map.addLayer(drawnItems);
+// STORAGE (GLOBAL)
+window.drawnItems=new L.FeatureGroup();
+map.addLayer(window.drawnItems);
 
-// DEVICE DETECT
-const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+// DEVICE
+const isMobile = window.innerWidth < 768;
 
-// 🔥 COLOR (GLOBAL FIX)
-window.getColor=function(mode){
+// COLOR
+function getColor(mode){
 if(mode==="good") return "green";
 if(mode==="bad") return "orange";
 if(mode==="blocked") return "red";
 return "green";
-};
+}
 
-// =====================
-// 📱 MOBILE DRAW SYSTEM
-// =====================
+// ================= MOBILE =================
 let drawing=false;
 let currentLine=[];
 let tempLine=null;
+let currentMode="good";
 
-function startDraw(type){
-if(!isMobile) return;
-drawing=type;
+function setMode(m){
+currentMode=m;
+if(isMobile) startDraw();
+}
+
+function startDraw(){
+drawing=true;
 currentLine=[];
 if(tempLine){
 map.removeLayer(tempLine);
@@ -104,32 +109,33 @@ tempLine=null;
 }
 }
 
-map.on("click",e=>{
-if(!isMobile) return;
-if(!drawing) return;
+// 🔥 FIXED TOUCH PRECISION
+map.on("touchstart click", function(e){
+if(!isMobile || !drawing) return;
 
-currentLine.push([e.latlng.lat,e.latlng.lng]);
+const latlng = e.latlng;
+
+currentLine.push([latlng.lat,latlng.lng]);
 
 if(tempLine){
 tempLine.setLatLngs(currentLine);
 }else{
 tempLine=L.polyline(currentLine,{
-color:getColor(drawing),
+color:getColor(currentMode),
 weight:5
 }).addTo(map);
 }
 });
 
 function finishDraw(){
-if(!isMobile) return;
 if(!drawing||currentLine.length<2) return;
 
 const line=L.polyline(currentLine,{
-color:getColor(drawing),
+color:getColor(currentMode),
 weight:5
 });
 
-line.feature={type:"Feature",properties:{mode:drawing}};
+line.feature={type:"Feature",properties:{mode:currentMode}};
 
 drawnItems.addLayer(line);
 saveToFirebase(line);
@@ -141,28 +147,20 @@ drawing=false;
 }
 
 function cancelDraw(){
-if(!isMobile) return;
 if(tempLine) map.removeLayer(tempLine);
 tempLine=null;
 currentLine=[];
 drawing=false;
 }
 
-// =====================
-// 💻 DESKTOP DRAW (OLD UI)
-// =====================
+// ================= DESKTOP =================
 if(!isMobile){
-
-document.getElementById("toolbar").style.display="none";
 
 const drawControl=new L.Control.Draw({
 edit:{featureGroup:drawnItems},
 draw:{
-polygon:true,
-polyline:true,
-rectangle:false,
-circle:false,
-marker:false
+polygon:false,
+polyline:true
 }
 });
 map.addControl(drawControl);
@@ -170,8 +168,12 @@ map.addControl(drawControl);
 map.on(L.Draw.Event.CREATED,e=>{
 const l=e.layer;
 
-l.setStyle({color:getColor("good"),weight:5});
-l.feature={type:"Feature",properties:{mode:"good"}};
+l.setStyle({
+color:getColor(currentMode),
+weight:5
+});
+
+l.feature={type:"Feature",properties:{mode:currentMode}};
 
 drawnItems.addLayer(l);
 saveToFirebase(l);
@@ -179,7 +181,7 @@ saveToFirebase(l);
 
 }
 
-// DELETE
+// ================= DELETE =================
 async function deleteAll(){
 if(!confirm("Dzēst visu?")) return;
 
@@ -198,19 +200,17 @@ drawnItems.clearLayers();
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const firebaseConfig={
+const app=initializeApp({
 apiKey:"AIzaSyC-IjqWrPmipV3KxHDO27lqun2ZaTaTdR0",
-authDomain:"forest-map-2971b.firebaseapp.com",
 projectId:"forest-map-2971b"
-};
+});
 
-const app=initializeApp(firebaseConfig);
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// 🔥 LOAD (FIXED SAFE VERSION)
+// 🔥 SYNC FIX (STRĀDĀ)
 onSnapshot(refDB,snap=>{
-drawnItems.clearLayers();
+window.drawnItems.clearLayers();
 
 snap.forEach(doc=>{
 const data=doc.data();
@@ -221,11 +221,12 @@ const f=data.geojson;
 const coords=f.geometry.coordinates.map(c=>[c[1],c[0]]);
 
 const line=L.polyline(coords,{
-color:window.getColor(f.properties.mode),
+color:(f.properties.mode==="bad"?"orange":
+       f.properties.mode==="blocked"?"red":"green"),
 weight:5
 });
 
-drawnItems.addLayer(line);
+window.drawnItems.addLayer(line);
 });
 });
 
