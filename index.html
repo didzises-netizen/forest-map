@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map FINAL FIX</title>
+<title>Forest Map FINAL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -19,7 +19,7 @@ z-index:1000;
 background:white;
 padding:10px;
 border-radius:10px;
-width:240px;
+width:250px;
 }
 
 button{
@@ -39,6 +39,8 @@ font-size:16px;
 <button onclick="setMode('bad')">🟠 Slikts</button>
 <button onclick="setMode('blocked')">🔴 Bloķēts</button>
 
+<button onclick="toggleTwoClick()">📍 2-Point Mode: OFF</button>
+
 <button onclick="finishDraw()">✔ Pabeigt</button>
 <button onclick="cancelDraw()">❌ Atcelt</button>
 
@@ -55,7 +57,7 @@ font-size:16px;
 // ================= MAP =================
 const map=L.map('map',{tap:true}).setView([56.5,21],13);
 
-// 🌲 LAYERS
+// LAYERS
 const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
 format:"image/png"
@@ -88,15 +90,27 @@ if(mode==="blocked") return "red";
 return "green";
 }
 
-// ================= MOBILE DRAW =================
+// ================= MOBILE =================
 let drawing=false;
 let currentLine=[];
 let tempLine=null;
 let currentMode="good";
 
+// 🔥 2-CLICK MODE
+let twoClickMode=false;
+let firstPoint=null;
+
+function toggleTwoClick(){
+twoClickMode=!twoClickMode;
+firstPoint=null;
+
+document.querySelectorAll("button")[3].innerText =
+twoClickMode ? "📍 2-Point Mode: ON" : "📍 2-Point Mode: OFF";
+}
+
 function setMode(m){
 currentMode=m;
-if(isMobile) startDraw();
+if(isMobile && !twoClickMode) startDraw();
 }
 
 function startDraw(){
@@ -108,8 +122,41 @@ tempLine=null;
 }
 }
 
+// 📱 CLICK
 map.on("click",e=>{
-if(!isMobile || !drawing) return;
+if(!isMobile) return;
+
+// ===== 2 POINT MODE =====
+if(twoClickMode){
+
+if(!firstPoint){
+firstPoint=[e.latlng.lat,e.latlng.lng];
+
+// vizuālais punkts
+L.circleMarker(firstPoint,{radius:6,color:"blue"}).addTo(map);
+
+return;
+}
+
+const secondPoint=[e.latlng.lat,e.latlng.lng];
+
+const line=L.polyline([firstPoint,secondPoint],{
+color:getColor(currentMode),
+weight:5
+});
+
+line.feature={properties:{mode:currentMode}};
+
+drawnItems.addLayer(line);
+saveToFirebase(line);
+
+firstPoint=null;
+
+return;
+}
+
+// ===== MULTI MODE =====
+if(!drawing) return;
 
 currentLine.push([e.latlng.lat,e.latlng.lng]);
 
@@ -121,8 +168,10 @@ color:getColor(currentMode),
 weight:5
 }).addTo(map);
 }
+
 });
 
+// finish multi
 function finishDraw(){
 if(!drawing||currentLine.length<2) return;
 
@@ -147,9 +196,10 @@ if(tempLine) map.removeLayer(tempLine);
 tempLine=null;
 currentLine=[];
 drawing=false;
+firstPoint=null;
 }
 
-// ================= DESKTOP DRAW =================
+// ================= DESKTOP =================
 if(!isMobile){
 
 const drawControl=new L.Control.Draw({
@@ -204,7 +254,7 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// 🔥 LOAD (FIXED)
+// LOAD
 onSnapshot(refDB,snap=>{
 window.drawnItems.clearLayers();
 
@@ -212,11 +262,11 @@ snap.forEach(doc=>{
 const data=doc.data();
 if(!data.coords) return;
 
-const coords = data.coords.map(p=>[p.lat,p.lng]);
+const coords=data.coords.map(p=>[p.lat,p.lng]);
 
 const line=L.polyline(coords,{
 color:(data.mode==="bad"?"orange":
-       data.mode==="blocked"?"red":"green"),
+data.mode==="blocked"?"red":"green"),
 weight:5
 });
 
@@ -224,12 +274,12 @@ window.drawnItems.addLayer(line);
 });
 });
 
-// 🔥 SAVE (NO NESTED ARRAYS)
+// SAVE
 window.saveToFirebase=async function(layer){
 
-const latlngs = layer.getLatLngs();
+const latlngs=layer.getLatLngs();
 
-const coords = latlngs.map(p=>({
+const coords=latlngs.map(p=>({
 lat:p.lat,
 lng:p.lng
 }));
@@ -241,7 +291,6 @@ mode:layer.feature.properties.mode
 
 };
 
-// expose
 window.getDocs=getDocs;
 window.deleteDoc=deleteDoc;
 window.refDB=refDB;
