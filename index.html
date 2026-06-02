@@ -14,7 +14,6 @@ href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css
 html,body{margin:0;height:100%;}
 #map{width:100%;height:100%;}
 
-/* TOOLBAR */
 .toolbar{
     position:absolute;
     top:10px;
@@ -24,7 +23,6 @@ html,body{margin:0;height:100%;}
     font-family:sans-serif;
 }
 
-/* DROPDOWN */
 .dropdown{
     background:white;
     margin-bottom:8px;
@@ -43,7 +41,6 @@ html,body{margin:0;height:100%;}
 .dropdown-content{
     display:none;
     padding:10px;
-    gap:5px;
 }
 
 .dropdown-content button,
@@ -60,7 +57,6 @@ html,body{margin:0;height:100%;}
 
 <div class="toolbar">
 
-<!-- ROADS -->
 <div class="dropdown">
 <div class="dropdown-header" onclick="toggle(this)">Ceļi</div>
 <div class="dropdown-content">
@@ -71,7 +67,6 @@ html,body{margin:0;height:100%;}
 </div>
 </div>
 
-<!-- FIELD -->
 <div class="dropdown">
 <div class="dropdown-header" onclick="toggle(this)">Teritorija</div>
 <div class="dropdown-content">
@@ -79,7 +74,6 @@ html,body{margin:0;height:100%;}
 </div>
 </div>
 
-<!-- PHOTO -->
 <div class="dropdown">
 <div class="dropdown-header" onclick="toggle(this)">Foto</div>
 <div class="dropdown-content">
@@ -87,7 +81,6 @@ html,body{margin:0;height:100%;}
 </div>
 </div>
 
-<!-- GEOJSON -->
 <div class="dropdown">
 <div class="dropdown-header" onclick="toggle(this)">GeoJSON</div>
 <div class="dropdown-content">
@@ -97,7 +90,6 @@ html,body{margin:0;height:100%;}
 </div>
 </div>
 
-<!-- MAP -->
 <div class="dropdown">
 <div class="dropdown-header" onclick="toggle(this)">Karte</div>
 <div class="dropdown-content">
@@ -118,7 +110,7 @@ html,body{margin:0;height:100%;}
 
 <script>
 
-/* DROPDOWN TOGGLE */
+/* DROPDOWN */
 function toggle(el){
 const content = el.nextElementSibling;
 content.style.display = content.style.display === "block" ? "none" : "block";
@@ -165,24 +157,24 @@ if(!saved) return;
 L.geoJSON(JSON.parse(saved),{
 
 style:f=>{
-if(f.properties.type==="game_field")
+if(f.properties?.type==="game_field")
 return {color:"blue",weight:3,fill:false};
 
-if(f.properties.roadType==="good")
+if(f.properties?.roadType==="good")
 return {color:"green",weight:5};
 
-if(f.properties.roadType==="bad")
+if(f.properties?.roadType==="bad")
 return {color:"orange",weight:5};
 
-if(f.properties.roadType==="blocked")
+if(f.properties?.roadType==="blocked")
 return {color:"red",weight:5};
 },
 
 pointToLayer:(f,latlng)=>{
-if(f.properties.type==="road_end")
+if(f.properties?.type==="road_end")
 return L.circleMarker(latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
 
-if(f.properties.type==="photo"){
+if(f.properties?.type==="photo"){
 const m=L.marker(latlng);
 m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
 return m;
@@ -202,9 +194,11 @@ draw:{polygon:false,rectangle:false,circle:false,marker:false,circlemarker:false
 });
 map.addControl(drawControl);
 
-/* MOUSE */
-map.on('mousemove',e=>{
-coords.innerHTML=e.latlng.lat.toFixed(6)+", "+e.latlng.lng.toFixed(6);
+/* ✅ FIXED coords */
+const coordsEl = document.getElementById("coords");
+
+map.on('mousemove', e=>{
+coordsEl.innerHTML = e.latlng.lat.toFixed(6)+", "+e.latlng.lng.toFixed(6);
 });
 
 /* CREATED */
@@ -288,12 +282,12 @@ const data=JSON.parse(e.target.result);
 
 const layer=L.geoJSON(data,{
 style:f=>{
-if(f.properties.roadType==="good") return {color:"green"};
-if(f.properties.roadType==="bad") return {color:"orange"};
-if(f.properties.roadType==="blocked") return {color:"red"};
+if(f.properties?.roadType==="good") return {color:"green"};
+if(f.properties?.roadType==="bad") return {color:"orange"};
+if(f.properties?.roadType==="blocked") return {color:"red"};
 },
 pointToLayer:(f,latlng)=>{
-if(f.properties.type==="photo"){
+if(f.properties?.type==="photo"){
 const m=L.marker(latlng);
 m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
 return m;
@@ -323,10 +317,10 @@ a.click();
 });
 }
 
-/* LAT LNG */
+/* ✅ FIXED latlng */
 function goToLatLng(){
-let input=latlngInput.value.trim();
-if(!input) return;
+let input = document.getElementById("latlngInput").value.trim();
+if(!input) return alert("Ievadi koordinātes");
 
 input=input.replace(",", " ");
 const parts=input.split(/\s+/);
@@ -334,7 +328,11 @@ const parts=input.split(/\s+/);
 const lat=parseFloat(parts[0]);
 const lng=parseFloat(parts[1]);
 
-const marker=L.marker([lat,lng]).addTo(map).bindPopup(input).openPopup();
+if(isNaN(lat)||isNaN(lng)) return alert("Nepareizs formāts");
+
+const marker=L.marker([lat,lng]).addTo(map)
+.bindPopup(input).openPopup();
+
 drawnItems.addLayer(marker);
 map.setView([lat,lng],16);
 saveData();
