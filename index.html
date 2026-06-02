@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map FIXED</title>
+<title>Forest Map FINAL FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -11,7 +11,6 @@
 html,body{margin:0;height:100%}
 #map{height:100%}
 
-/* toolbar */
 .toolbar{
 position:absolute;
 top:10px;
@@ -20,7 +19,7 @@ z-index:1000;
 background:white;
 padding:10px;
 border-radius:10px;
-width:250px;
+width:240px;
 }
 
 button{
@@ -34,7 +33,7 @@ font-size:16px;
 
 <body>
 
-<div class="toolbar" id="toolbar">
+<div class="toolbar">
 
 <button onclick="setMode('good')">🟢 Braucams</button>
 <button onclick="setMode('bad')">🟠 Slikts</button>
@@ -56,7 +55,7 @@ font-size:16px;
 // ================= MAP =================
 const map=L.map('map',{tap:true}).setView([56.5,21],13);
 
-// 🌲 LAYERS (FIXED)
+// 🌲 LAYERS
 const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
 format:"image/png"
@@ -71,10 +70,10 @@ topo.addTo(map);
 
 L.control.layers({
 "Topo":topo,
-"Orto (īstais skats)":ortho
+"Orto":ortho
 }).addTo(map);
 
-// STORAGE (GLOBAL)
+// STORAGE
 window.drawnItems=new L.FeatureGroup();
 map.addLayer(window.drawnItems);
 
@@ -89,7 +88,7 @@ if(mode==="blocked") return "red";
 return "green";
 }
 
-// ================= MOBILE =================
+// ================= MOBILE DRAW =================
 let drawing=false;
 let currentLine=[];
 let tempLine=null;
@@ -109,13 +108,10 @@ tempLine=null;
 }
 }
 
-// 🔥 FIXED TOUCH PRECISION
-map.on("touchstart click", function(e){
+map.on("click",e=>{
 if(!isMobile || !drawing) return;
 
-const latlng = e.latlng;
-
-currentLine.push([latlng.lat,latlng.lng]);
+currentLine.push([e.latlng.lat,e.latlng.lng]);
 
 if(tempLine){
 tempLine.setLatLngs(currentLine);
@@ -135,7 +131,7 @@ color:getColor(currentMode),
 weight:5
 });
 
-line.feature={type:"Feature",properties:{mode:currentMode}};
+line.feature={properties:{mode:currentMode}};
 
 drawnItems.addLayer(line);
 saveToFirebase(line);
@@ -153,7 +149,7 @@ currentLine=[];
 drawing=false;
 }
 
-// ================= DESKTOP =================
+// ================= DESKTOP DRAW =================
 if(!isMobile){
 
 const drawControl=new L.Control.Draw({
@@ -173,7 +169,7 @@ color:getColor(currentMode),
 weight:5
 });
 
-l.feature={type:"Feature",properties:{mode:currentMode}};
+l.feature={properties:{mode:currentMode}};
 
 drawnItems.addLayer(l);
 saveToFirebase(l);
@@ -208,21 +204,19 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// 🔥 SYNC FIX (STRĀDĀ)
+// 🔥 LOAD (FIXED)
 onSnapshot(refDB,snap=>{
 window.drawnItems.clearLayers();
 
 snap.forEach(doc=>{
 const data=doc.data();
-if(!data.geojson) return;
+if(!data.coords) return;
 
-const f=data.geojson;
-
-const coords=f.geometry.coordinates.map(c=>[c[1],c[0]]);
+const coords = data.coords.map(p=>[p.lat,p.lng]);
 
 const line=L.polyline(coords,{
-color:(f.properties.mode==="bad"?"orange":
-       f.properties.mode==="blocked"?"red":"green"),
+color:(data.mode==="bad"?"orange":
+       data.mode==="blocked"?"red":"green"),
 weight:5
 });
 
@@ -230,11 +224,21 @@ window.drawnItems.addLayer(line);
 });
 });
 
-// SAVE
-window.saveToFirebase=async layer=>{
+// 🔥 SAVE (NO NESTED ARRAYS)
+window.saveToFirebase=async function(layer){
+
+const latlngs = layer.getLatLngs();
+
+const coords = latlngs.map(p=>({
+lat:p.lat,
+lng:p.lng
+}));
+
 await addDoc(refDB,{
-geojson:layer.toGeoJSON()
+coords:coords,
+mode:layer.feature.properties.mode
 });
+
 };
 
 // expose
