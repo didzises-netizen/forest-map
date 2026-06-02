@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+<meta charset="UTF-8">
+<title>Forest Road Mapper</title>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+
+<style>
+html,body{margin:0;height:100%;}
+#map{width:100%;height:100%;}
+
+/* TOOLBAR */
+.toolbar{
+    position:absolute;
+    top:10px;
+    right:10px;
+    z-index:1000;
+    width:240px;
+    font-family:sans-serif;
+}
+
+/* DROPDOWN */
+.dropdown{
+    background:white;
+    margin-bottom:8px;
+    border-radius:8px;
+    box-shadow:0 0 10px rgba(0,0,0,.2);
+    overflow:hidden;
+}
+
+.dropdown-header{
+    padding:10px;
+    cursor:pointer;
+    font-weight:bold;
+    background:#f0f0f0;
+}
+
+.dropdown-content{
+    display:none;
+    padding:10px;
+    gap:5px;
+}
+
+.dropdown-content button,
+.dropdown-content input{
+    width:100%;
+    margin-bottom:5px;
+}
+
+#coords{font-size:12px;margin-top:5px;}
+</style>
+</head>
+
+<body>
+
+<div class="toolbar">
+
+<!-- ROADS -->
+<div class="dropdown">
+<div class="dropdown-header" onclick="toggle(this)">Ceļi</div>
+<div class="dropdown-content">
+<button onclick="roadType='good'">Braucama</button>
+<button onclick="roadType='bad'">Slikti braucama</button>
+<button onclick="roadType='blocked'">Neizbraucama</button>
+<button onclick="addRoadEnd()">Ceļa gals</button>
+</div>
+</div>
+
+<!-- FIELD -->
+<div class="dropdown">
+<div class="dropdown-header" onclick="toggle(this)">Teritorija</div>
+<div class="dropdown-content">
+<button onclick="drawGameField()">Iezīmēt teritoriju</button>
+</div>
+</div>
+
+<!-- PHOTO -->
+<div class="dropdown">
+<div class="dropdown-header" onclick="toggle(this)">Foto</div>
+<div class="dropdown-content">
+<button onclick="addPhotoPoint()">Foto punkts</button>
+</div>
+</div>
+
+<!-- GEOJSON -->
+<div class="dropdown">
+<div class="dropdown-header" onclick="toggle(this)">GeoJSON</div>
+<div class="dropdown-content">
+<button onclick="exportGeoJSON()">Saglabāt</button>
+<input type="file" id="importFile" accept=".geojson">
+<button onclick="importGeoJSON()">Ielādēt</button>
+</div>
+</div>
+
+<!-- MAP -->
+<div class="dropdown">
+<div class="dropdown-header" onclick="toggle(this)">Karte</div>
+<div class="dropdown-content">
+<button onclick="enableMapExport()">Saglabāt attēlu</button>
+<input id="latlngInput" placeholder="Lat,Lng">
+<button onclick="goToLatLng()">Rādīt punktu</button>
+<div id="coords"></div>
+</div>
+</div>
+
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<script>
+
+/* DROPDOWN TOGGLE */
+function toggle(el){
+const content = el.nextElementSibling;
+content.style.display = content.style.display === "block" ? "none" : "block";
+}
+
+/* MAP */
+const map = L.map('map').setView([56.504,21.01],13);
+
+const lvmTopo = L.tileLayer.wms(
+"https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+layers:"public:Topo50",
+format:"image/png",
+maxZoom:19
+}).addTo(map);
+
+const lvmOrto = L.tileLayer.wms(
+"https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+layers:"public:Orto_LKS",
+format:"image/jpeg",
+maxZoom:19
+});
+
+L.control.layers({
+"LVM Topo":lvmTopo,
+"LVM Orto":lvmOrto
+}).addTo(map);
+
+/* DRAW */
+let roadType="good";
+const drawnItems=new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+/* SAVE */
+function saveData(){
+localStorage.setItem("forest_data",
+JSON.stringify(drawnItems.toGeoJSON()));
+}
+
+/* LOAD */
+function loadData(){
+const saved=localStorage.getItem("forest_data");
+if(!saved) return;
+
+L.geoJSON(JSON.parse(saved),{
+
+style:f=>{
+if(f.properties.type==="game_field")
+return {color:"blue",weight:3,fill:false};
+
+if(f.properties.roadType==="good")
+return {color:"green",weight:5};
+
+if(f.properties.roadType==="bad")
+return {color:"orange",weight:5};
+
+if(f.properties.roadType==="blocked")
+return {color:"red",weight:5};
+},
+
+pointToLayer:(f,latlng)=>{
+if(f.properties.type==="road_end")
+return L.circleMarker(latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
+
+if(f.properties.type==="photo"){
+const m=L.marker(latlng);
+m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
+return m;
+}
+
+return L.marker(latlng);
+}
+
+}).eachLayer(l=>drawnItems.addLayer(l));
+}
+loadData();
+
+/* DRAW CONTROL */
+const drawControl=new L.Control.Draw({
+edit:{featureGroup:drawnItems},
+draw:{polygon:false,rectangle:false,circle:false,marker:false,circlemarker:false}
+});
+map.addControl(drawControl);
+
+/* MOUSE */
+map.on('mousemove',e=>{
+coords.innerHTML=e.latlng.lat.toFixed(6)+", "+e.latlng.lng.toFixed(6);
+});
+
+/* CREATED */
+map.on(L.Draw.Event.CREATED,e=>{
+const l=e.layer;
+
+if(l instanceof L.Polyline && !(l instanceof L.Polygon)){
+let c="green";
+if(roadType==="bad") c="orange";
+if(roadType==="blocked") c="red";
+l.setStyle({color:c,weight:5});
+l.feature={type:"Feature",properties:{roadType}};
+}
+
+if(l instanceof L.Polygon){
+l.setStyle({color:"blue",weight:3,fill:false});
+l.feature={type:"Feature",properties:{type:"game_field"}};
+}
+
+drawnItems.addLayer(l);
+saveData();
+});
+
+/* FIELD */
+function drawGameField(){
+new L.Draw.Polygon(map).enable();
+}
+
+/* ROAD END */
+function addRoadEnd(){
+map.once("click",e=>{
+const m=L.circleMarker(e.latlng,{radius:8,color:"black",fillColor:"black",fillOpacity:1});
+m.feature={type:"Feature",properties:{type:"road_end"}};
+drawnItems.addLayer(m);
+saveData();
+});
+}
+
+/* PHOTO */
+function addPhotoPoint(){
+map.once("click",e=>{
+const i=document.createElement("input");
+i.type="file";
+i.accept="image/*";
+
+i.onchange=()=>{
+const f=i.files[0];
+const r=new FileReader();
+
+r.onload=ev=>{
+const m=L.marker(e.latlng);
+m.bindPopup(`<img src="${ev.target.result}" width="250">`);
+m.feature={type:"Feature",properties:{type:"photo",imageData:ev.target.result}};
+drawnItems.addLayer(m);
+saveData();
+};
+r.readAsDataURL(f);
+};
+i.click();
+});
+}
+
+/* EXPORT */
+function exportGeoJSON(){
+const a=document.createElement("a");
+a.href="data:text/json;charset=utf-8,"+
+encodeURIComponent(JSON.stringify(drawnItems.toGeoJSON(),null,2));
+a.download="forest_data.geojson";
+a.click();
+}
+
+/* IMPORT */
+function importGeoJSON(){
+const fileInput=document.getElementById("importFile");
+if(!fileInput.files.length) return alert("Izvēlies failu");
+
+const reader=new FileReader();
+
+reader.onload=e=>{
+const data=JSON.parse(e.target.result);
+
+const layer=L.geoJSON(data,{
+style:f=>{
+if(f.properties.roadType==="good") return {color:"green"};
+if(f.properties.roadType==="bad") return {color:"orange"};
+if(f.properties.roadType==="blocked") return {color:"red"};
+},
+pointToLayer:(f,latlng)=>{
+if(f.properties.type==="photo"){
+const m=L.marker(latlng);
+m.bindPopup(`<img src="${f.properties.imageData}" width="250">`);
+return m;
+}
+return L.marker(latlng);
+}
+});
+
+layer.eachLayer(l=>drawnItems.addLayer(l));
+saveData();
+};
+
+reader.readAsText(fileInput.files[0]);
+}
+
+/* MAP IMAGE */
+function enableMapExport(){
+new L.Draw.Rectangle(map).enable();
+
+map.once(L.Draw.Event.CREATED,()=>{
+html2canvas(map.getContainer()).then(c=>{
+const a=document.createElement("a");
+a.download="map.png";
+a.href=c.toDataURL();
+a.click();
+});
+});
+}
+
+/* LAT LNG */
+function goToLatLng(){
+let input=latlngInput.value.trim();
+if(!input) return;
+
+input=input.replace(",", " ");
+const parts=input.split(/\s+/);
+
+const lat=parseFloat(parts[0]);
+const lng=parseFloat(parts[1]);
+
+const marker=L.marker([lat,lng]).addTo(map).bindPopup(input).openPopup();
+drawnItems.addLayer(marker);
+map.setView([lat,lng],16);
+saveData();
+}
+
+/* AUTO SAVE */
+map.on(L.Draw.Event.EDITED, saveData);
+map.on(L.Draw.Event.DELETED, saveData);
+
+</script>
+
+</body>
+</html>
