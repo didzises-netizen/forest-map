@@ -11,6 +11,7 @@
 body,html{margin:0;height:100%}
 #map{height:100%}
 
+/* TOOLBAR */
 .toolbar{
 position:absolute;
 top:10px;
@@ -28,6 +29,20 @@ margin:5px 0;
 padding:12px;
 font-size:16px;
 }
+
+/* 🔥 MOBILE DRAW CONTROLS */
+.leaflet-draw{
+position:absolute !important;
+left:10px !important;
+top:120px !important;
+}
+
+.leaflet-draw-toolbar a{
+width:44px !important;
+height:44px !important;
+line-height:44px !important;
+font-size:20px !important;
+}
 </style>
 </head>
 
@@ -43,7 +58,12 @@ font-size:16px;
 
 <button onclick="exportGeo()">Export GeoJSON</button>
 
+<button onclick="document.getElementById('geoInput').click()">Upload GeoJSON</button>
+
+<button onclick="deleteAll()">🗑 Dzēst visu</button>
+
 <input type="file" id="imgInput">
+<input type="file" id="geoInput" accept=".json,.geojson" style="display:none">
 
 </div>
 
@@ -55,17 +75,34 @@ font-size:16px;
 <script>
 const map=L.map('map').setView([56.5,21],13);
 
-L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+// LAYERS
+const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
-format:"image/png"
+format:"image/png",
+maxZoom:19
+});
+
+const ortho=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+layers:"public:Ortofoto",
+format:"image/png",
+maxZoom:19
+});
+
+topo.addTo(map);
+
+L.control.layers({
+"Topo karte": topo,
+"Ortofoto": ortho
 }).addTo(map);
 
+// DRAW
 let mode="good";
 
 const drawnItems=new L.FeatureGroup();
 map.addLayer(drawnItems);
 
 const drawControl=new L.Control.Draw({
+position:'topleft', // 🔥 pa kreisi
 edit:{featureGroup:drawnItems},
 draw:{
 polygon:true,
@@ -77,6 +114,7 @@ marker:false
 });
 map.addControl(drawControl);
 
+// CREATE
 map.on(L.Draw.Event.CREATED,e=>{
 const l=e.layer;
 
@@ -97,19 +135,29 @@ const input=document.getElementById("imgInput");
 
 input.onchange=()=>{
 const file=input.files[0];
-const reader=new FileReader();
 
-reader.onload=()=>{
-map.once("click",e=>{
-const img=L.imageOverlay(reader.result,[
+map.once("click", async e=>{
+
+const storageRef = ref(storage,"images/"+Date.now());
+await uploadBytes(storageRef,file);
+const url=await getDownloadURL(storageRef);
+
+const bounds=[
 [e.latlng.lat,e.latlng.lng],
 [e.latlng.lat+0.01,e.latlng.lng+0.01]
-]);
-drawnItems.addLayer(img);
-});
+];
+
+const img=L.imageOverlay(url,bounds);
+
+img.feature={
+type:"Feature",
+properties:{type:"image",url,bounds}
 };
 
-reader.readAsDataURL(file);
+drawnItems.addLayer(img);
+saveToFirebase(img);
+
+});
 };
 }
 
@@ -119,38 +167,92 @@ const data=drawnItems.toGeoJSON();
 console.log(JSON.stringify(data));
 alert("GeoJSON console!");
 }
+
+// IMPORT
+document.getElementById("geoInput").addEventListener("change",function(e){
+const file=e.target.files[0];
+if(!file) return;
+
+const reader=new FileReader();
+
+reader.onload=function(event){
+const geojson=JSON.parse(event.target.result);
+
+L.geoJSON(geojson,{
+style:f=>{
+if(f.properties?.mode==="good") return {color:"green"};
+if(f.properties?.mode==="bad") return {color:"orange"};
+if(f.properties?.mode==="blocked") return {color:"red"};
+},
+onEachFeature:(f,l)=>{
+if(f.properties?.type==="image"){
+const img=L.imageOverlay(f.properties.url,f.properties.bounds);
+drawnItems.addLayer(img);
+saveToFirebase(img);
+}else{
+drawnItems.addLayer(l);
+saveToFirebase(l);
+}
+}
+});
+};
+
+reader.readAsText(file);
+});
+
+// DELETE ALL
+async function deleteAll(){
+if(!confirm("Dzēst VISU?")) return;
+
+const snap=await getDocs(refDB);
+
+snap.forEach(async d=>{
+await deleteDoc(d.ref);
+});
+
+drawnItems.clearLayers();
+}
 </script>
 
 <!-- FIREBASE -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
-const firebaseConfig = {
-  apiKey: "TAVA_API_KEY",
-  authDomain: "forest-map-2971b.firebaseapp.com",
-  projectId: "forest-map-2971b",
-  storageBucket: "forest-map-2971b.firebasestorage.app",
-  messagingSenderId: "123317579216",
-  appId: "1:123317579216:web:82362232f6b94b9fa31dd5"
+const firebaseConfig={
+apiKey:"AIzaSyC-IjqWrPmipV3KxHDO27lqun2ZaTaTdR0",
+authDomain:"forest-map-2971b.firebaseapp.com",
+projectId:"forest-map-2971b",
+storageBucket:"forest-map-2971b.firebasestorage.app",
+messagingSenderId:"123317579216",
+appId:"1:123317579216:web:82362232f6b94b9fa31dd5"
 };
 
 const app=initializeApp(firebaseConfig);
 const db=getFirestore(app);
-const ref=collection(db,"roads");
+const storage=getStorage(app);
+
+const refDB=collection(db,"roads");
 
 // LOAD
-onSnapshot(ref,snap=>{
+onSnapshot(refDB,snap=>{
 drawnItems.clearLayers();
 
 snap.forEach(doc=>{
-const d=doc.data();
+const f=doc.data().geojson;
 
-const layer=L.geoJSON(d.geojson,{
-style:f=>{
-if(f.properties?.mode==="good") return {color:"green"};
-if(f.properties?.mode==="bad") return {color:"orange"};
-if(f.properties?.mode==="blocked") return {color:"red"};
+if(f.properties?.type==="image"){
+const img=L.imageOverlay(f.properties.url,f.properties.bounds);
+drawnItems.addLayer(img);
+return;
+}
+
+const layer=L.geoJSON(f,{
+style:x=>{
+if(x.properties?.mode==="good") return {color:"green"};
+if(x.properties?.mode==="bad") return {color:"orange"};
+if(x.properties?.mode==="blocked") return {color:"red"};
 }
 });
 
@@ -159,11 +261,21 @@ layer.eachLayer(l=>drawnItems.addLayer(l));
 });
 
 // SAVE
-window.saveToFirebase=async function(layer){
-await addDoc(ref,{
+window.saveToFirebase=async layer=>{
+await addDoc(refDB,{
 geojson:layer.toGeoJSON()
 });
-}
+};
+
+// expose
+window.ref=ref;
+window.uploadBytes=uploadBytes;
+window.getDownloadURL=getDownloadURL;
+window.storage=storage;
+window.getDocs=getDocs;
+window.deleteDoc=deleteDoc;
+window.refDB=refDB;
+
 </script>
 
 </body>
