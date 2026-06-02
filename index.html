@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map FINAL</title>
+<title>Forest Map ULTRA SIMPLE MOBILE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -19,14 +19,14 @@ z-index:1000;
 background:white;
 padding:10px;
 border-radius:10px;
-width:250px;
+width:230px;
 }
 
 button{
 width:100%;
 margin:5px 0;
-padding:14px;
-font-size:16px;
+padding:16px;
+font-size:18px;
 }
 </style>
 </head>
@@ -34,18 +34,10 @@ font-size:16px;
 <body>
 
 <div class="toolbar">
-
 <button onclick="setMode('good')">🟢 Braucams</button>
 <button onclick="setMode('bad')">🟠 Slikts</button>
 <button onclick="setMode('blocked')">🔴 Bloķēts</button>
-
-<button onclick="toggleTwoClick()">📍 2-Point Mode: OFF</button>
-
-<button onclick="finishDraw()">✔ Pabeigt</button>
-<button onclick="cancelDraw()">❌ Atcelt</button>
-
 <button onclick="deleteAll()">🗑 Dzēst visu</button>
-
 </div>
 
 <div id="map"></div>
@@ -90,44 +82,18 @@ if(mode==="blocked") return "red";
 return "green";
 }
 
-// ================= MOBILE =================
-let drawing=false;
-let currentLine=[];
-let tempLine=null;
+// ================= MOBILE ULTRA SIMPLE =================
 let currentMode="good";
-
-// 🔥 2-CLICK MODE
-let twoClickMode=false;
 let firstPoint=null;
-
-function toggleTwoClick(){
-twoClickMode=!twoClickMode;
-firstPoint=null;
-
-document.querySelectorAll("button")[3].innerText =
-twoClickMode ? "📍 2-Point Mode: ON" : "📍 2-Point Mode: OFF";
-}
 
 function setMode(m){
 currentMode=m;
-if(isMobile && !twoClickMode) startDraw();
+firstPoint=null;
 }
 
-function startDraw(){
-drawing=true;
-currentLine=[];
-if(tempLine){
-map.removeLayer(tempLine);
-tempLine=null;
-}
-}
-
-// 📱 CLICK
+// 📱 SUPER SIMPLE DRAW
 map.on("click",e=>{
 if(!isMobile) return;
-
-// ===== 2 POINT MODE =====
-if(twoClickMode){
 
 if(!firstPoint){
 firstPoint=[e.latlng.lat,e.latlng.lng];
@@ -138,6 +104,7 @@ L.circleMarker(firstPoint,{radius:6,color:"blue"}).addTo(map);
 return;
 }
 
+// otrais klikšķis
 const secondPoint=[e.latlng.lat,e.latlng.lng];
 
 const line=L.polyline([firstPoint,secondPoint],{
@@ -151,53 +118,7 @@ drawnItems.addLayer(line);
 saveToFirebase(line);
 
 firstPoint=null;
-
-return;
-}
-
-// ===== MULTI MODE =====
-if(!drawing) return;
-
-currentLine.push([e.latlng.lat,e.latlng.lng]);
-
-if(tempLine){
-tempLine.setLatLngs(currentLine);
-}else{
-tempLine=L.polyline(currentLine,{
-color:getColor(currentMode),
-weight:5
-}).addTo(map);
-}
-
 });
-
-// finish multi
-function finishDraw(){
-if(!drawing||currentLine.length<2) return;
-
-const line=L.polyline(currentLine,{
-color:getColor(currentMode),
-weight:5
-});
-
-line.feature={properties:{mode:currentMode}};
-
-drawnItems.addLayer(line);
-saveToFirebase(line);
-
-map.removeLayer(tempLine);
-tempLine=null;
-currentLine=[];
-drawing=false;
-}
-
-function cancelDraw(){
-if(tempLine) map.removeLayer(tempLine);
-tempLine=null;
-currentLine=[];
-drawing=false;
-firstPoint=null;
-}
 
 // ================= DESKTOP =================
 if(!isMobile){
