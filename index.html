@@ -2,15 +2,15 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map Mobile</title>
+<title>Forest Map FINAL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 
 <style>
 html,body{margin:0;height:100%}
 #map{height:100%}
 
-/* TOOLBAR */
 .toolbar{
 position:absolute;
 top:10px;
@@ -22,18 +22,18 @@ border-radius:10px;
 width:260px;
 }
 
-button,input{
+button{
 width:100%;
 margin:5px 0;
-padding:16px;
-font-size:18px;
+padding:14px;
+font-size:16px;
 }
 </style>
 </head>
 
 <body>
 
-<div class="toolbar">
+<div class="toolbar" id="toolbar">
 
 <button onclick="startDraw('good')">🟢 Braucams</button>
 <button onclick="startDraw('bad')">🟠 Slikts</button>
@@ -42,8 +42,6 @@ font-size:18px;
 <button onclick="finishDraw()">✔ Pabeigt</button>
 <button onclick="cancelDraw()">❌ Atcelt</button>
 
-<button onclick="addImage()">🖼 Bilde</button>
-
 <button onclick="deleteAll()">🗑 Dzēst visu</button>
 
 </div>
@@ -51,18 +49,19 @@ font-size:18px;
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
 const map=L.map('map').setView([56.5,21],13);
 
-// LAYERS
+// 🌲 LAYERS (FIXED)
 const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
 format:"image/png"
 });
 
 const ortho=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
-layers:"public:Ortofoto",
+layers:"public:Ortofoto", // ja nestrādā → maini uz public:Orto
 format:"image/png"
 });
 
@@ -77,15 +76,28 @@ L.control.layers({
 const drawnItems=new L.FeatureGroup();
 map.addLayer(drawnItems);
 
-// DRAW SYSTEM
+// DEVICE DETECT
+const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
+// 🔥 COLOR (GLOBAL FIX)
+window.getColor=function(mode){
+if(mode==="good") return "green";
+if(mode==="bad") return "orange";
+if(mode==="blocked") return "red";
+return "green";
+};
+
+// =====================
+// 📱 MOBILE DRAW SYSTEM
+// =====================
 let drawing=false;
 let currentLine=[];
 let tempLine=null;
 
 function startDraw(type){
+if(!isMobile) return;
 drawing=type;
 currentLine=[];
-
 if(tempLine){
 map.removeLayer(tempLine);
 tempLine=null;
@@ -93,6 +105,7 @@ tempLine=null;
 }
 
 map.on("click",e=>{
+if(!isMobile) return;
 if(!drawing) return;
 
 currentLine.push([e.latlng.lat,e.latlng.lng]);
@@ -108,6 +121,7 @@ weight:5
 });
 
 function finishDraw(){
+if(!isMobile) return;
 if(!drawing||currentLine.length<2) return;
 
 const line=L.polyline(currentLine,{
@@ -115,10 +129,7 @@ color:getColor(drawing),
 weight:5
 });
 
-line.feature={
-type:"Feature",
-properties:{mode:drawing}
-};
+line.feature={type:"Feature",properties:{mode:drawing}};
 
 drawnItems.addLayer(line);
 saveToFirebase(line);
@@ -130,51 +141,42 @@ drawing=false;
 }
 
 function cancelDraw(){
+if(!isMobile) return;
 if(tempLine) map.removeLayer(tempLine);
 tempLine=null;
 currentLine=[];
 drawing=false;
 }
 
-function getColor(mode){
-if(mode==="good") return "green";
-if(mode==="bad") return "orange";
-if(mode==="blocked") return "red";
+// =====================
+// 💻 DESKTOP DRAW (OLD UI)
+// =====================
+if(!isMobile){
+
+document.getElementById("toolbar").style.display="none";
+
+const drawControl=new L.Control.Draw({
+edit:{featureGroup:drawnItems},
+draw:{
+polygon:true,
+polyline:true,
+rectangle:false,
+circle:false,
+marker:false
 }
-
-// IMAGE
-function addImage(){
-const input=document.createElement("input");
-input.type="file";
-
-input.onchange=()=>{
-const file=input.files[0];
-
-map.once("click", async e=>{
-
-const storageRef=ref(storage,"img/"+Date.now());
-await uploadBytes(storageRef,file);
-const url=await getDownloadURL(storageRef);
-
-const bounds=[
-[e.latlng.lat,e.latlng.lng],
-[e.latlng.lat+0.01,e.latlng.lng+0.01]
-];
-
-const img=L.imageOverlay(url,bounds);
-
-img.feature={
-type:"Feature",
-properties:{type:"image",url,bounds}
-};
-
-drawnItems.addLayer(img);
-saveToFirebase(img);
-
 });
-};
+map.addControl(drawControl);
 
-input.click();
+map.on(L.Draw.Event.CREATED,e=>{
+const l=e.layer;
+
+l.setStyle({color:getColor("good"),weight:5});
+l.feature={type:"Feature",properties:{mode:"good"}};
+
+drawnItems.addLayer(l);
+saveToFirebase(l);
+});
+
 }
 
 // DELETE
@@ -195,38 +197,31 @@ drawnItems.clearLayers();
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 const firebaseConfig={
 apiKey:"AIzaSyC-IjqWrPmipV3KxHDO27lqun2ZaTaTdR0",
 authDomain:"forest-map-2971b.firebaseapp.com",
-projectId:"forest-map-2971b",
-storageBucket:"forest-map-2971b.firebasestorage.app",
-messagingSenderId:"123317579216",
-appId:"1:123317579216:web:82362232f6b94b9fa31dd5"
+projectId:"forest-map-2971b"
 };
 
 const app=initializeApp(firebaseConfig);
 const db=getFirestore(app);
-const storage=getStorage(app);
-
 const refDB=collection(db,"roads");
 
-// LOAD
+// 🔥 LOAD (FIXED SAFE VERSION)
 onSnapshot(refDB,snap=>{
 drawnItems.clearLayers();
 
 snap.forEach(doc=>{
-const f=doc.data().geojson;
+const data=doc.data();
+if(!data.geojson) return;
 
-if(f.properties?.type==="image"){
-const img=L.imageOverlay(f.properties.url,f.properties.bounds);
-drawnItems.addLayer(img);
-return;
-}
+const f=data.geojson;
 
-const line=L.polyline(f.geometry.coordinates.map(c=>[c[1],c[0]]),{
-color:getColor(f.properties.mode),
+const coords=f.geometry.coordinates.map(c=>[c[1],c[0]]);
+
+const line=L.polyline(coords,{
+color:window.getColor(f.properties.mode),
 weight:5
 });
 
@@ -242,10 +237,6 @@ geojson:layer.toGeoJSON()
 };
 
 // expose
-window.ref=ref;
-window.uploadBytes=uploadBytes;
-window.getDownloadURL=getDownloadURL;
-window.storage=storage;
 window.getDocs=getDocs;
 window.deleteDoc=deleteDoc;
 window.refDB=refDB;
