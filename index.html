@@ -2,13 +2,12 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Forest Map PRO</title>
+<title>Forest Map Mobile</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 
 <style>
-body,html{margin:0;height:100%}
+html,body{margin:0;height:100%}
 #map{height:100%}
 
 /* TOOLBAR */
@@ -26,22 +25,8 @@ width:260px;
 button,input{
 width:100%;
 margin:5px 0;
-padding:12px;
-font-size:16px;
-}
-
-/* 🔥 MOBILE DRAW CONTROLS */
-.leaflet-draw{
-position:absolute !important;
-left:10px !important;
-top:120px !important;
-}
-
-.leaflet-draw-toolbar a{
-width:44px !important;
-height:44px !important;
-line-height:44px !important;
-font-size:20px !important;
+padding:16px;
+font-size:18px;
 }
 </style>
 </head>
@@ -50,27 +35,22 @@ font-size:20px !important;
 
 <div class="toolbar">
 
-<button onclick="mode='good'">Braucams</button>
-<button onclick="mode='bad'">Slikts</button>
-<button onclick="mode='blocked'">Bloķēts</button>
+<button onclick="startDraw('good')">🟢 Braucams</button>
+<button onclick="startDraw('bad')">🟠 Slikts</button>
+<button onclick="startDraw('blocked')">🔴 Bloķēts</button>
 
-<button onclick="addImage()">Pievienot bildi</button>
+<button onclick="finishDraw()">✔ Pabeigt</button>
+<button onclick="cancelDraw()">❌ Atcelt</button>
 
-<button onclick="exportGeo()">Export GeoJSON</button>
-
-<button onclick="document.getElementById('geoInput').click()">Upload GeoJSON</button>
+<button onclick="addImage()">🖼 Bilde</button>
 
 <button onclick="deleteAll()">🗑 Dzēst visu</button>
-
-<input type="file" id="imgInput">
-<input type="file" id="geoInput" accept=".json,.geojson" style="display:none">
 
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
 const map=L.map('map').setView([56.5,21],13);
@@ -78,67 +58,101 @@ const map=L.map('map').setView([56.5,21],13);
 // LAYERS
 const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Topo50",
-format:"image/png",
-maxZoom:19
+format:"image/png"
 });
 
 const ortho=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
 layers:"public:Ortofoto",
-format:"image/png",
-maxZoom:19
+format:"image/png"
 });
 
 topo.addTo(map);
 
 L.control.layers({
-"Topo karte": topo,
-"Ortofoto": ortho
+"Topo":topo,
+"Ortofoto":ortho
 }).addTo(map);
 
-// DRAW
-let mode="good";
-
+// STORAGE
 const drawnItems=new L.FeatureGroup();
 map.addLayer(drawnItems);
 
-const drawControl=new L.Control.Draw({
-position:'topleft', // 🔥 pa kreisi
-edit:{featureGroup:drawnItems},
-draw:{
-polygon:true,
-polyline:true,
-rectangle:false,
-circle:false,
-marker:false
+// DRAW SYSTEM
+let drawing=false;
+let currentLine=[];
+let tempLine=null;
+
+function startDraw(type){
+drawing=type;
+currentLine=[];
+
+if(tempLine){
+map.removeLayer(tempLine);
+tempLine=null;
+}
+}
+
+map.on("click",e=>{
+if(!drawing) return;
+
+currentLine.push([e.latlng.lat,e.latlng.lng]);
+
+if(tempLine){
+tempLine.setLatLngs(currentLine);
+}else{
+tempLine=L.polyline(currentLine,{
+color:getColor(drawing),
+weight:5
+}).addTo(map);
 }
 });
-map.addControl(drawControl);
 
-// CREATE
-map.on(L.Draw.Event.CREATED,e=>{
-const l=e.layer;
+function finishDraw(){
+if(!drawing||currentLine.length<2) return;
 
-let color="green";
-if(mode==="bad") color="orange";
-if(mode==="blocked") color="red";
-
-l.setStyle({color,weight:5});
-l.feature={type:"Feature",properties:{mode}};
-
-drawnItems.addLayer(l);
-saveToFirebase(l);
+const line=L.polyline(currentLine,{
+color:getColor(drawing),
+weight:5
 });
+
+line.feature={
+type:"Feature",
+properties:{mode:drawing}
+};
+
+drawnItems.addLayer(line);
+saveToFirebase(line);
+
+map.removeLayer(tempLine);
+tempLine=null;
+currentLine=[];
+drawing=false;
+}
+
+function cancelDraw(){
+if(tempLine) map.removeLayer(tempLine);
+tempLine=null;
+currentLine=[];
+drawing=false;
+}
+
+function getColor(mode){
+if(mode==="good") return "green";
+if(mode==="bad") return "orange";
+if(mode==="blocked") return "red";
+}
 
 // IMAGE
 function addImage(){
-const input=document.getElementById("imgInput");
+const input=document.createElement("input");
+input.type="file";
 
 input.onchange=()=>{
 const file=input.files[0];
 
 map.once("click", async e=>{
 
-const storageRef = ref(storage,"images/"+Date.now());
+const storageRef=ref(storage,"img/"+Date.now());
 await uploadBytes(storageRef,file);
 const url=await getDownloadURL(storageRef);
 
@@ -159,50 +173,13 @@ saveToFirebase(img);
 
 });
 };
+
+input.click();
 }
 
-// EXPORT
-function exportGeo(){
-const data=drawnItems.toGeoJSON();
-console.log(JSON.stringify(data));
-alert("GeoJSON console!");
-}
-
-// IMPORT
-document.getElementById("geoInput").addEventListener("change",function(e){
-const file=e.target.files[0];
-if(!file) return;
-
-const reader=new FileReader();
-
-reader.onload=function(event){
-const geojson=JSON.parse(event.target.result);
-
-L.geoJSON(geojson,{
-style:f=>{
-if(f.properties?.mode==="good") return {color:"green"};
-if(f.properties?.mode==="bad") return {color:"orange"};
-if(f.properties?.mode==="blocked") return {color:"red"};
-},
-onEachFeature:(f,l)=>{
-if(f.properties?.type==="image"){
-const img=L.imageOverlay(f.properties.url,f.properties.bounds);
-drawnItems.addLayer(img);
-saveToFirebase(img);
-}else{
-drawnItems.addLayer(l);
-saveToFirebase(l);
-}
-}
-});
-};
-
-reader.readAsText(file);
-});
-
-// DELETE ALL
+// DELETE
 async function deleteAll(){
-if(!confirm("Dzēst VISU?")) return;
+if(!confirm("Dzēst visu?")) return;
 
 const snap=await getDocs(refDB);
 
@@ -248,15 +225,12 @@ drawnItems.addLayer(img);
 return;
 }
 
-const layer=L.geoJSON(f,{
-style:x=>{
-if(x.properties?.mode==="good") return {color:"green"};
-if(x.properties?.mode==="bad") return {color:"orange"};
-if(x.properties?.mode==="blocked") return {color:"red"};
-}
+const line=L.polyline(f.geometry.coordinates.map(c=>[c[1],c[0]]),{
+color:getColor(f.properties.mode),
+weight:5
 });
 
-layer.eachLayer(l=>drawnItems.addLayer(l));
+drawnItems.addLayer(line);
 });
 });
 
