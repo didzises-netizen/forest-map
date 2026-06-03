@@ -1,61 +1,61 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8" />
-<title>Forest Map ULTRA SIMPLE MOBILE</title>
+<meta charset="utf-8"/>
+<title>Forest Map CLEAN UI</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 
 <style>
 html,body{margin:0;height:100%}
 #map{height:100%}
 
-/* ===== TOOLBAR (tavas pogas) ===== */
-/* ===== TAVA TOOLBAR → PA LABI ===== */
-.toolbar{
+/* ===== BOTTOM PANEL ===== */
+.panel{
 position:absolute;
-top:50%;
-right:10px;   /* 🔥 pārvietojam pa labi */
-left:auto;
-transform:translateY(-50%);
+bottom:15px;
+left:50%;
+transform:translateX(-50%);
 z-index:1000;
 background:rgba(255,255,255,0.95);
 padding:12px;
-border-radius:14px;
-width:150px;
+border-radius:16px;
+display:flex;
+gap:10px;
+flex-wrap:wrap;
+justify-content:center;
+box-shadow:0 4px 20px rgba(0,0,0,0.2);
 }
 
-/* ===== LEAFLET DRAW → PA KREISI ===== */
-.leaflet-top.leaflet-left {
-left: 10px !important;
-top: 50% !important;
-transform: translateY(-50%);
+/* pogas */
+.btn{
+padding:14px 18px;
+font-size:16px;
+border:none;
+border-radius:10px;
+background:#eee;
 }
 
-/* Sakārto draw grupas kopā */
-.leaflet-control-container .leaflet-left {
-display: flex;
-flex-direction: column;
-gap: 12px;
+.btn.active{
+outline:3px solid black;
 }
 
-/* Pogu izmērs */
-.leaflet-control a {
-width: 65px !important;
-height: 65px !important;
-line-height: 65px !important;
-font-size: 24px !important;
-border-radius: 12px !important;
+.btn.big{
+font-size:18px;
+padding:16px 22px;
 }
 
-/* Mobile bigger */
+/* zoom tikai augšā */
+.leaflet-top.leaflet-left{
+top:10px !important;
+left:10px !important;
+}
+
+/* mobile */
 @media (max-width:768px){
-.leaflet-control a {
-width: 75px !important;
-height: 75px !important;
-line-height: 75px !important;
-font-size: 26px !important;
+.btn{
+font-size:18px;
+padding:18px;
 }
 }
 </style>
@@ -63,117 +63,105 @@ font-size: 26px !important;
 
 <body>
 
-<div class="toolbar">
-<button onclick="setMode('good')">🟢 Braucams</button>
-<button onclick="setMode('bad')">🟠 Slikts</button>
-<button onclick="setMode('blocked')">🔴 Bloķēts</button>
-<button onclick="deleteAll()">🗑 Dzēst visu</button>
-</div>
-
 <div id="map"></div>
 
+<div class="panel">
+<button class="btn" onclick="setMode('good')" id="b_good">🟢</button>
+<button class="btn" onclick="setMode('bad')" id="b_bad">🟠</button>
+<button class="btn" onclick="setMode('blocked')" id="b_blocked">🔴</button>
+
+<button class="btn big" onclick="startDraw()">✏️ Zīmēt</button>
+<button class="btn" onclick="cancelDraw()">❌</button>
+<button class="btn" onclick="deleteAll()">🗑</button>
+</div>
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
-// ================= MAP =================
-const map=L.map('map',{tap:true}).setView([56.5,21],13);
+// MAP
+const map=L.map('map').setView([56.5,21],13);
 
-const topo = L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?", {
-layers: "public:Topo50",
-format: "image/png"
+// LAYERS
+const topo=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+layers:"public:Topo50",
+format:"image/png"
 });
 
-const ortho = L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?", {
-layers: "public:Ortofoto",
-format: "image/png"
+const ortho=L.tileLayer.wms("https://lvmgeoserver.lvm.lv/geoserver/ows?",{
+layers:"public:Ortofoto",
+format:"image/png"
 });
 
 topo.addTo(map);
 
 L.control.layers({
-"Topo": topo,
-"Ortofoto": ortho
+"Topo":topo,
+"Ortofoto":ortho
 }).addTo(map);
 
 // STORAGE
-window.drawnItems=new L.FeatureGroup();
-map.addLayer(window.drawnItems);
+const drawnItems=new L.FeatureGroup();
+map.addLayer(drawnItems);
 
-// DEVICE
-const isMobile = window.innerWidth < 768;
-
-// COLOR
-function getColor(mode){
-if(mode==="good") return "green";
-if(mode==="bad") return "orange";
-if(mode==="blocked") return "red";
-return "green";
-}
-
-// ================= MOBILE =================
-let currentMode="good";
+// STATE
+let mode="good";
+let drawing=false;
 let firstPoint=null;
 
+// MODE
 function setMode(m){
-currentMode=m;
+mode=m;
+
+document.querySelectorAll(".btn").forEach(b=>b.classList.remove("active"));
+
+if(m==="good") document.getElementById("b_good").classList.add("active");
+if(m==="bad") document.getElementById("b_bad").classList.add("active");
+if(m==="blocked") document.getElementById("b_blocked").classList.add("active");
+}
+
+// DRAW CONTROL
+function startDraw(){
+drawing=true;
 firstPoint=null;
 }
 
+function cancelDraw(){
+drawing=false;
+firstPoint=null;
+}
+
+// COLOR
+function getColor(){
+if(mode==="good") return "green";
+if(mode==="bad") return "orange";
+if(mode==="blocked") return "red";
+}
+
+// CLICK DRAW (gan mobile gan desktop)
 map.on("click",e=>{
-if(!isMobile) return;
+if(!drawing) return;
 
 if(!firstPoint){
 firstPoint=[e.latlng.lat,e.latlng.lng];
-L.circleMarker(firstPoint,{radius:6,color:"blue"}).addTo(map);
+L.circleMarker(firstPoint,{radius:6}).addTo(map);
 return;
 }
 
-const secondPoint=[e.latlng.lat,e.latlng.lng];
+const second=[e.latlng.lat,e.latlng.lng];
 
-const line=L.polyline([firstPoint,secondPoint],{
-color:getColor(currentMode),
+const line=L.polyline([firstPoint,second],{
+color:getColor(),
 weight:5
 });
-
-line.feature={properties:{mode:currentMode}};
 
 drawnItems.addLayer(line);
 saveToFirebase(line);
 
 firstPoint=null;
+drawing=false;
 });
 
-// ================= DESKTOP =================
-if(!isMobile){
-
-const drawControl=new L.Control.Draw({
-edit:{featureGroup:drawnItems},
-draw:{
-polygon:false,
-polyline:true
-}
-});
-
-map.addControl(drawControl);
-
-map.on(L.Draw.Event.CREATED,e=>{
-const l=e.layer;
-
-l.setStyle({
-color:getColor(currentMode),
-weight:5
-});
-
-l.feature={properties:{mode:currentMode}};
-
-drawnItems.addLayer(l);
-saveToFirebase(l);
-});
-
-}
-
-// ================= DELETE =================
+// DELETE
 async function deleteAll(){
 if(!confirm("Dzēst visu?")) return;
 
@@ -200,44 +188,35 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// REALTIME LOAD (NO REFRESH VAJADZĪGS)
+// REALTIME
 onSnapshot(refDB,snap=>{
-window.drawnItems.clearLayers();
+drawnItems.clearLayers();
 
 snap.forEach(doc=>{
-const data=doc.data();
-if(!data.coords) return;
+const d=doc.data();
+if(!d.coords) return;
 
-const coords=data.coords.map(p=>[p.lat,p.lng]);
+const coords=d.coords.map(p=>[p.lat,p.lng]);
 
-const line=L.polyline(coords,{
-color:(data.mode==="bad"?"orange":
-data.mode==="blocked"?"red":"green"),
+L.polyline(coords,{
+color:(d.mode==="bad"?"orange":
+d.mode==="blocked"?"red":"green"),
 weight:5
-});
-
-window.drawnItems.addLayer(line);
+}).addTo(drawnItems);
 });
 });
 
-// SAVE (FIX nested arrays)
+// SAVE
 window.saveToFirebase=async function(layer){
 
-let latlngs=layer.getLatLngs();
-
-// 🔥 FIX ja nested array (desktop)
-if(Array.isArray(latlngs[0])){
-latlngs = latlngs.flat();
-}
-
-const coords=latlngs.map(p=>({
+const coords=layer.getLatLngs().map(p=>({
 lat:p.lat,
 lng:p.lng
 }));
 
 await addDoc(refDB,{
 coords:coords,
-mode:layer.feature.properties.mode
+mode:mode
 });
 };
 
