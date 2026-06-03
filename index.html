@@ -11,6 +11,7 @@
 html,body{margin:0;height:100%}
 #map{height:100%}
 
+/* ===== TOOLBAR (tavas pogas) ===== */
 .toolbar{
 position:absolute;
 top:50%;
@@ -29,6 +30,34 @@ margin:8px 0;
 padding:18px;
 font-size:18px;
 border-radius:10px;
+}
+
+/* ===== LEAFLET DRAW POGAS (tas ko gribēji) ===== */
+.leaflet-top.leaflet-left {
+left: 10px !important;
+top: 50% !important;
+transform: translateY(-50%);
+}
+
+.leaflet-control {
+margin-bottom: 12px !important;
+}
+
+.leaflet-control a {
+width: 65px !important;
+height: 65px !important;
+line-height: 65px !important;
+font-size: 24px !important;
+border-radius: 12px !important;
+}
+
+@media (max-width: 768px){
+.leaflet-control a {
+width: 75px !important;
+height: 75px !important;
+line-height: 75px !important;
+font-size: 26px !important;
+}
 }
 </style>
 </head>
@@ -65,8 +94,9 @@ topo.addTo(map);
 
 L.control.layers({
 "Topo": topo,
-"Orto": ortho
+"Ortofoto": ortho
 }).addTo(map);
+
 // STORAGE
 window.drawnItems=new L.FeatureGroup();
 map.addLayer(window.drawnItems);
@@ -82,7 +112,7 @@ if(mode==="blocked") return "red";
 return "green";
 }
 
-// ================= MOBILE ULTRA SIMPLE =================
+// ================= MOBILE =================
 let currentMode="good";
 let firstPoint=null;
 
@@ -91,20 +121,15 @@ currentMode=m;
 firstPoint=null;
 }
 
-// 📱 SUPER SIMPLE DRAW
 map.on("click",e=>{
 if(!isMobile) return;
 
 if(!firstPoint){
 firstPoint=[e.latlng.lat,e.latlng.lng];
-
-// vizuālais punkts
 L.circleMarker(firstPoint,{radius:6,color:"blue"}).addTo(map);
-
 return;
 }
 
-// otrais klikšķis
 const secondPoint=[e.latlng.lat,e.latlng.lng];
 
 const line=L.polyline([firstPoint,secondPoint],{
@@ -130,6 +155,7 @@ polygon:false,
 polyline:true
 }
 });
+
 map.addControl(drawControl);
 
 map.on(L.Draw.Event.CREATED,e=>{
@@ -175,7 +201,7 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// LOAD
+// REALTIME LOAD (NO REFRESH VAJADZĪGS)
 onSnapshot(refDB,snap=>{
 window.drawnItems.clearLayers();
 
@@ -195,10 +221,15 @@ window.drawnItems.addLayer(line);
 });
 });
 
-// SAVE
+// SAVE (FIX nested arrays)
 window.saveToFirebase=async function(layer){
 
-const latlngs=layer.getLatLngs();
+let latlngs=layer.getLatLngs();
+
+// 🔥 FIX ja nested array (desktop)
+if(Array.isArray(latlngs[0])){
+latlngs = latlngs.flat();
+}
 
 const coords=latlngs.map(p=>({
 lat:p.lat,
@@ -209,7 +240,6 @@ await addDoc(refDB,{
 coords:coords,
 mode:layer.feature.properties.mode
 });
-
 };
 
 window.getDocs=getDocs;
