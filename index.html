@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Forest Map CLEAN UI</title>
+<title>Forest Map PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -27,7 +27,6 @@ justify-content:center;
 box-shadow:0 4px 20px rgba(0,0,0,0.2);
 }
 
-/* pogas */
 .btn{
 padding:14px 18px;
 font-size:16px;
@@ -51,7 +50,6 @@ top:10px !important;
 left:10px !important;
 }
 
-/* mobile */
 @media (max-width:768px){
 .btn{
 font-size:18px;
@@ -78,7 +76,7 @@ padding:18px;
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// MAP
+// ================= MAP =================
 const map=L.map('map').setView([56.5,21],13);
 
 // LAYERS
@@ -108,18 +106,38 @@ let mode="good";
 let drawing=false;
 let firstPoint=null;
 
+// ===== LOCATION =====
+let userMarker=null;
+
+map.locate({setView:true,maxZoom:16});
+
+map.on("locationfound",e=>{
+if(userMarker) map.removeLayer(userMarker);
+
+userMarker=L.circleMarker(e.latlng,{
+radius:8,
+color:"blue",
+fillColor:"blue",
+fillOpacity:0.7
+}).addTo(map);
+});
+
+map.on("locationerror",()=>{
+alert("Ieslēdz GPS!");
+});
+
 // MODE
 function setMode(m){
 mode=m;
 
 document.querySelectorAll(".btn").forEach(b=>b.classList.remove("active"));
 
-if(m==="good") document.getElementById("b_good").classList.add("active");
-if(m==="bad") document.getElementById("b_bad").classList.add("active");
-if(m==="blocked") document.getElementById("b_blocked").classList.add("active");
+if(m==="good") b_good.classList.add("active");
+if(m==="bad") b_bad.classList.add("active");
+if(m==="blocked") b_blocked.classList.add("active");
 }
 
-// DRAW CONTROL
+// DRAW
 function startDraw(){
 drawing=true;
 firstPoint=null;
@@ -137,7 +155,7 @@ if(mode==="bad") return "orange";
 if(mode==="blocked") return "red";
 }
 
-// CLICK DRAW (gan mobile gan desktop)
+// CLICK DRAW
 map.on("click",e=>{
 if(!drawing) return;
 
@@ -161,15 +179,35 @@ firstPoint=null;
 drawing=false;
 });
 
+// ===== LOCAL STORAGE =====
+function saveLocal(data){
+let arr=JSON.parse(localStorage.getItem("roads")||"[]");
+arr.push(data);
+localStorage.setItem("roads",JSON.stringify(arr));
+}
+
+function loadLocal(){
+let arr=JSON.parse(localStorage.getItem("roads")||"[]");
+
+arr.forEach(d=>{
+const coords=d.coords.map(p=>[p.lat,p.lng]);
+
+L.polyline(coords,{
+color:(d.mode==="bad"?"orange":
+d.mode==="blocked"?"red":"green"),
+weight:5
+}).addTo(drawnItems);
+});
+}
+
 // DELETE
 async function deleteAll(){
 if(!confirm("Dzēst visu?")) return;
 
-const snap=await getDocs(refDB);
+localStorage.removeItem("roads");
 
-snap.forEach(async d=>{
-await deleteDoc(d.ref);
-});
+const snap=await getDocs(refDB);
+snap.forEach(async d=>await deleteDoc(d.ref));
 
 drawnItems.clearLayers();
 }
@@ -188,7 +226,9 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// REALTIME
+// ONLINE / OFFLINE LOAD
+if(navigator.onLine){
+
 onSnapshot(refDB,snap=>{
 drawnItems.clearLayers();
 
@@ -206,6 +246,10 @@ weight:5
 });
 });
 
+}else{
+loadLocal();
+}
+
 // SAVE
 window.saveToFirebase=async function(layer){
 
@@ -214,11 +258,30 @@ lat:p.lat,
 lng:p.lng
 }));
 
-await addDoc(refDB,{
-coords:coords,
-mode:mode
-});
+const data={coords:coords,mode:mode};
+
+// vienmēr local
+saveLocal(data);
+
+// ja online → firebase
+if(navigator.onLine){
+await addDoc(refDB,data);
+}
 };
+
+// AUTO SYNC
+window.addEventListener("online",async()=>{
+
+let arr=JSON.parse(localStorage.getItem("roads")||"[]");
+
+for(const d of arr){
+await addDoc(refDB,d);
+}
+
+localStorage.removeItem("roads");
+
+alert("Sinhronizēts!");
+});
 
 window.getDocs=getDocs;
 window.deleteDoc=deleteDoc;
