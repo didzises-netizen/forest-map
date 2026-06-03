@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Forest Map PRO</title>
+<title>Forest Map PRO+</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -10,7 +10,7 @@
 html,body{margin:0;height:100%}
 #map{height:100%}
 
-/* ===== BOTTOM PANEL ===== */
+/* ===== UI PANEL ===== */
 .panel{
 position:absolute;
 bottom:15px;
@@ -44,7 +44,6 @@ font-size:18px;
 padding:16px 22px;
 }
 
-/* zoom tikai augšā */
 .leaflet-top.leaflet-left{
 top:10px !important;
 left:10px !important;
@@ -68,7 +67,7 @@ padding:18px;
 <button class="btn" onclick="setMode('bad')" id="b_bad">🟠</button>
 <button class="btn" onclick="setMode('blocked')" id="b_blocked">🔴</button>
 
-<button class="btn big" onclick="startDraw()">✏️ Zīmēt</button>
+<button class="btn big" onclick="startDraw()">✏️</button>
 <button class="btn" onclick="cancelDraw()">❌</button>
 <button class="btn" onclick="deleteAll()">🗑</button>
 </div>
@@ -106,27 +105,60 @@ let mode="good";
 let drawing=false;
 let firstPoint=null;
 
-// ===== LOCATION =====
+// ================= GPS + DIRECTION =================
 let userMarker=null;
+let currentHeading=0;
+let currentLatLng=null;
 
-map.locate({setView:true,maxZoom:16});
+// iPhone permission fix
+if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+document.body.addEventListener("click",()=>{
+DeviceOrientationEvent.requestPermission();
+},{once:true});
+}
+
+// GPS
+map.locate({setView:true,maxZoom:16,watch:true});
 
 map.on("locationfound",e=>{
-if(userMarker) map.removeLayer(userMarker);
-
-userMarker=L.circleMarker(e.latlng,{
-radius:8,
-color:"blue",
-fillColor:"blue",
-fillOpacity:0.7
-}).addTo(map);
+currentLatLng=e.latlng;
+updateUserMarker();
 });
 
+// COMPASS
+window.addEventListener("deviceorientation", e=>{
+if(e.alpha!==null){
+currentHeading=e.alpha;
+updateUserMarker();
+}
+});
+
+// DRAW ARROW
+function updateUserMarker(){
+if(!currentLatLng) return;
+
+if(userMarker) map.removeLayer(userMarker);
+
+const icon=L.divIcon({
+className:"arrow-icon",
+html:`<div style="
+transform: rotate(${currentHeading}deg);
+font-size:30px;
+color:blue;
+">▲</div>`,
+iconSize:[30,30],
+iconAnchor:[15,15]
+});
+
+userMarker=L.marker(currentLatLng,{icon}).addTo(map);
+}
+
+// ERROR
 map.on("locationerror",()=>{
 alert("Ieslēdz GPS!");
 });
 
-// MODE
+// ================= MODE =================
 function setMode(m){
 mode=m;
 
@@ -137,7 +169,7 @@ if(m==="bad") b_bad.classList.add("active");
 if(m==="blocked") b_blocked.classList.add("active");
 }
 
-// DRAW
+// ================= DRAW =================
 function startDraw(){
 drawing=true;
 firstPoint=null;
@@ -148,7 +180,6 @@ drawing=false;
 firstPoint=null;
 }
 
-// COLOR
 function getColor(){
 if(mode==="good") return "green";
 if(mode==="bad") return "orange";
@@ -179,7 +210,7 @@ firstPoint=null;
 drawing=false;
 });
 
-// ===== LOCAL STORAGE =====
+// ================= LOCAL STORAGE =================
 function saveLocal(data){
 let arr=JSON.parse(localStorage.getItem("roads")||"[]");
 arr.push(data);
@@ -226,7 +257,7 @@ projectId:"forest-map-2971b"
 const db=getFirestore(app);
 const refDB=collection(db,"roads");
 
-// ONLINE / OFFLINE LOAD
+// LOAD
 if(navigator.onLine){
 
 onSnapshot(refDB,snap=>{
@@ -260,10 +291,8 @@ lng:p.lng
 
 const data={coords:coords,mode:mode};
 
-// vienmēr local
 saveLocal(data);
 
-// ja online → firebase
 if(navigator.onLine){
 await addDoc(refDB,data);
 }
